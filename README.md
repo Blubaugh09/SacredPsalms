@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lectio Divina - Sacred Reading Guide
+
+A beautiful, mobile-friendly application for guided spiritual reading through the ancient practice of Lectio Divina.
+
+## About Lectio Divina
+
+Lectio Divina ("Divine Reading") is a traditional contemplative practice of engaging with scripture in a prayerful manner. It invites readers to slow down and deeply engage with the text, allowing the Holy Spirit to speak through the words.
+
+The practice involves four main steps:
+1. **Lectio (Read)** - Slowly read the scripture passage
+2. **Meditatio (Meditate)** - Reflect on a word or phrase that stands out
+3. **Oratio (Pray)** - Respond to the text in prayer
+4. **Contemplatio (Contemplate)** - Rest in God's presence
+
+This application guides users through these steps while providing a reverent atmosphere for reflection.
+
+## Features
+
+- Step-by-step guidance through the Lectio Divina process
+- Beautiful, distraction-free interface optimized for mobile and desktop
+- Text highlighting for meditation on specific passages
+- Journal areas to record reflections and prayers
+- Contemplation timer
+- Optional calming background sounds
+- Saves your session progress
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18 or higher
+- npm or yarn
+
+### Installation
+
+1. Clone this repository:
+```bash
+git clone https://github.com/yourusername/lectio-divina.git
+cd lectio-divina
+```
+
+2. Install dependencies:
+```bash
+npm install
+# or
+yarn install
+```
+
+3. Add a background sound file:
+The application expects an ambient sound file at `public/sounds/ambient.mp3`. You'll need to add your own royalty-free ambient sound file here, or adjust the path in the `BackgroundSound.tsx` component.
+
+### Running the Application
 
 ```bash
 npm run dev
 # or
 yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Building for Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+# or
+yarn build
+```
 
-## Learn More
+## Customization
 
-To learn more about Next.js, take a look at the following resources:
+- **Scripture Passages**: To change the default scripture passage, edit the `sampleScripture` object in `src/context/LectioContext.tsx`.
+- **Styling**: The application uses styled-components. You can customize colors, fonts, and other design elements in `src/app/globals.css` and `src/components/StyledComponents.tsx`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## License
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Deploy on Vercel
+## Acknowledgments
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Inspired by the ancient monastic practice of Lectio Divina
+- Created to provide a reverent, focused environment for scripture meditation
