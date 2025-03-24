@@ -3,6 +3,7 @@
 import React from 'react';
 import { useMeditation } from '../context/MeditationContext';
 import styled from 'styled-components';
+import TranslationSelector from './TranslationSelector';
 
 const ChapterContainer = styled.div`
   max-width: 900px;
@@ -68,7 +69,19 @@ const ChapterGrid = styled.div`
   }
 `;
 
+const ReadIndicator = styled.div`
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  transform: translate(25%, -25%);
+`;
+
 const ChapterNumber = styled.button`
+  position: relative;
   background-color: var(--card-background);
   color: var(--primary);
   width: 100%;
@@ -145,11 +158,33 @@ const LoadingSpinner = styled.div`
 
 const ChapterSelection: React.FC = () => {
   const { loadPsalm, loadRandomPsalm, isLoading } = useMeditation();
+  const [readChapters, setReadChapters] = React.useState<number[]>([]);
   
-  // Generate an array of Psalm numbers (1-150)
   const psalmNumbers = Array.from({ length: 150 }, (_, i) => i + 1);
   
+  React.useEffect(() => {
+    try {
+      const storedChapters = localStorage.getItem('readPsalms');
+      if (storedChapters) {
+        setReadChapters(JSON.parse(storedChapters));
+      }
+    } catch (error) {
+      console.error('Error loading read psalms from localStorage:', error);
+    }
+  }, []);
+  
   const handlePsalmClick = (psalmNumber: number) => {
+    if (!readChapters.includes(psalmNumber)) {
+      const updatedReadChapters = [...readChapters, psalmNumber];
+      setReadChapters(updatedReadChapters);
+      
+      try {
+        localStorage.setItem('readPsalms', JSON.stringify(updatedReadChapters));
+      } catch (error) {
+        console.error('Error saving to localStorage:', error);
+      }
+    }
+    
     loadPsalm(psalmNumber);
   };
   
@@ -159,6 +194,7 @@ const ChapterSelection: React.FC = () => {
   
   return (
     <ChapterContainer>
+      <TranslationSelector />
       <Title>Sacred Psalms</Title>
       <Subtitle>
         Select a Psalm chapter to begin your meditation
@@ -176,6 +212,7 @@ const ChapterSelection: React.FC = () => {
                 aria-label={`Psalm ${num}`}
               >
                 {num}
+                {readChapters.includes(num) && <ReadIndicator />}
               </ChapterNumber>
             ))}
           </ChapterGrid>

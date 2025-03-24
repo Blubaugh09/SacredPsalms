@@ -340,6 +340,7 @@ const ScriptureReading: React.FC = () => {
       </ScriptureCard>
       
       <InstructionText>
+        {scripture.translation === 'ESV' ? 'Click on a word to highlight it. Scroll down to reflect on your highlighted words.' : 'Click on a word to highlight it. Scroll down to reflect on your highlighted words.'}
       </InstructionText>
       
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
-import { MeditationSession, MeditationStep, Scripture, HighlightedWord } from '../types';
+import { MeditationSession, MeditationStep, Scripture, HighlightedWord, TranslationType } from '../types';
 import { fetchPsalm, getRandomPsalm } from '../lib/api';
 
 // Default ESV Psalm as fallback
@@ -33,6 +33,8 @@ interface MeditationContextType {
   markBreathComplete: () => void;
   incrementBreath: () => void;
   resetSession: () => void;
+  translation: TranslationType;
+  setTranslation: (translation: TranslationType) => void;
 }
 
 const MeditationContext = createContext<MeditationContextType | undefined>(undefined);
@@ -48,6 +50,7 @@ export const useMeditation = () => {
 export const MeditationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [session, setSession] = useState<MeditationSession>(defaultSession);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [translation, setTranslation] = useState<TranslationType>('ESV');
 
   // Load from local storage on initial render
   useEffect(() => {
@@ -134,7 +137,7 @@ export const MeditationProvider: React.FC<{ children: ReactNode }> = ({ children
   const loadPsalm = useCallback(async (psalmNumber: number) => {
     setIsLoading(true);
     try {
-      const psalm = await fetchPsalm(psalmNumber);
+      const psalm = await fetchPsalm(psalmNumber, translation);
       setSession(prev => ({
         ...prev,
         scripture: psalm,
@@ -148,13 +151,13 @@ export const MeditationProvider: React.FC<{ children: ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [translation]);
 
   // Load a random psalm
   const loadRandomPsalm = useCallback(async () => {
     setIsLoading(true);
     try {
-      const psalm = await getRandomPsalm();
+      const psalm = await getRandomPsalm(translation);
       setSession(prev => ({
         ...prev,
         scripture: psalm,
@@ -168,7 +171,7 @@ export const MeditationProvider: React.FC<{ children: ReactNode }> = ({ children
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [translation]);
 
   // Highlight a word in the scripture
   const highlightWord = useCallback((word: string, index: number) => {
@@ -210,6 +213,16 @@ export const MeditationProvider: React.FC<{ children: ReactNode }> = ({ children
     }));
   }, []);
 
+  // Update localStorage when translation changes
+  const handleTranslationChange = useCallback((newTranslation: TranslationType) => {
+    setTranslation(newTranslation);
+    try {
+      localStorage.setItem('preferredTranslation', newTranslation);
+    } catch (error) {
+      console.error('Error saving translation preference:', error);
+    }
+  }, []);
+
   return (
     <MeditationContext.Provider
       value={{
@@ -224,7 +237,9 @@ export const MeditationProvider: React.FC<{ children: ReactNode }> = ({ children
         resetHighlights,
         markBreathComplete,
         incrementBreath,
-        resetSession
+        resetSession,
+        translation,
+        setTranslation: handleTranslationChange
       }}
     >
       {children}

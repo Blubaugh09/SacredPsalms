@@ -128,7 +128,7 @@ const BreathingExercise: React.FC = () => {
   // Breathing cycle
   useEffect(() => {
     // Skip breathing if already completed or if we've done 3 breaths
-    if (session.breathCompleted || breathCount >= 3) {
+    if (session.breathCompleted || breathCount >= 2) {
       markBreathComplete();
       nextStep();
       return;
@@ -165,7 +165,7 @@ const BreathingExercise: React.FC = () => {
             setBreathState('rest');
             incrementBreath();
             
-            if (breathCount + 1 >= 3) {
+            if (breathCount + 1 >= 2) {
               setInstruction('Well done');
               markBreathComplete();
               nextStep();
@@ -203,7 +203,7 @@ const BreathingExercise: React.FC = () => {
       <BreathProgressContainer>
         <BreathDot $active={breathCount >= 0} />
         <BreathDot $active={breathCount >= 1} />
-        <BreathDot $active={breathCount >= 2} />
+       
       </BreathProgressContainer>
       
       <BreathingSkip onClick={handleSkip}>
