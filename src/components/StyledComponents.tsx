@@ -194,11 +194,12 @@ export const StepIndicator = styled.div`
 `;
 
 export const StepDot = styled.div<{ $active: boolean }>`
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background-color: ${props => props.$active ? 'var(--primary)' : 'var(--light-gray)'};
-  transition: background-color 0.3s ease;
+width: 10px;
+height: 10px;
+border-radius: 50%;
+background-color: ${props => props.$active ? "#fff" : "rgba(255, 255, 255, 0.5)"};
+margin: 0 4px;
+transition: background-color 0.3s;
 `;
 
 // Footer

@@ -55,7 +55,8 @@ const StepNavigation: React.FC = () => {
     <>
       <StepIndicator>
         {steps.map((step) => (
-          <StepDot key={step} active={currentStep === step} />
+          <StepDot key={step} $active={currentStep === step} />
+
         ))}
       </StepIndicator>
       
