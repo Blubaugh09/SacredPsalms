@@ -411,11 +411,11 @@ const ScriptureReading: React.FC = () => {
     setSelectedIndices(new Set([index]));
   };
   
-  // Handle selection movement
+  // Update the handleSelectionMove function to better handle multi-line selections
   const handleSelectionMove = (index: number, event?: React.MouseEvent | React.TouchEvent) => {
     if (!isSelecting || selectionStartIndex === null) return;
     
-    // Calculate drag distance
+    // Calculate drag distance for determining if it's a click vs. drag
     if (event) {
       let currentX = 0, currentY = 0;
       
@@ -438,21 +438,100 @@ const ScriptureReading: React.FC = () => {
       setDragDistance(distance);
     }
     
-    // Determine the range of indices to select
+    // Determine the range of indices to select - this will work across lines
+    // since we're using the array indices which are in order regardless of display
     const start = Math.min(selectionStartIndex, index);
     const end = Math.max(selectionStartIndex, index);
     
     // Create a new set with all indices in the range
     const newSelectedIndices = new Set<number>();
     for (let i = start; i <= end; i++) {
-      // Only add indices that correspond to actual words (not spaces)
+      // Only add indices that correspond to actual words (not spaces or punctuation by itself)
       const wordAtIndex = words.find(w => w.index === i);
-      if (wordAtIndex && wordAtIndex.text.trim() !== '') {
+      if (wordAtIndex && wordAtIndex.text.trim() !== '' && /\w/.test(wordAtIndex.text)) {
         newSelectedIndices.add(i);
       }
     }
     
     setSelectedIndices(newSelectedIndices);
+  };
+  
+  // Enhance the touch movement handling to better track across lines
+  const handleTouchMove = (event: React.TouchEvent) => {
+    if (!isSelecting) return;
+    
+    const touch = event.touches[0];
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    
+    // Get elements at touch position
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    
+    // Find the word under the touch point
+    if (element) {
+      const wordIndex = element.getAttribute('data-index');
+      if (wordIndex) {
+        handleSelectionMove(parseInt(wordIndex), event);
+      } else {
+        // If touch is on the container but not on a word,
+        // find the closest word in the direction of the drag
+        const scriptureElement = document.querySelector('.scripture-text');
+        if (scriptureElement) {
+          const rect = scriptureElement.getBoundingClientRect();
+          
+          // Determine if touch is in the container
+          if (
+            touch.clientX >= rect.left && 
+            touch.clientX <= rect.right && 
+            touch.clientY >= rect.top && 
+            touch.clientY <= rect.bottom
+          ) {
+            // Get all word elements
+            const wordElements = scriptureElement.querySelectorAll('[data-index]');
+            
+            // Find closest element to touch point
+            let closestElement = null;
+            let minDistance = Infinity;
+            
+            wordElements.forEach(el => {
+              const elRect = el.getBoundingClientRect();
+              const centerX = elRect.left + elRect.width / 2;
+              const centerY = elRect.top + elRect.height / 2;
+              
+              const distance = Math.sqrt(
+                Math.pow(centerX - touch.clientX, 2) + 
+                Math.pow(centerY - touch.clientY, 2)
+              );
+              
+              if (distance < minDistance) {
+                minDistance = distance;
+                closestElement = el;
+              }
+            });
+            
+            if (closestElement) {
+              const closestIndex = closestElement.getAttribute('data-index');
+              if (closestIndex) {
+                handleSelectionMove(parseInt(closestIndex), event);
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+  
+  // Add a visual helper for multi-line selection
+  const renderSelectionHelper = () => {
+    if (!isSelecting || selectedIndices.size <= 1) return null;
+    
+    return (
+      <div className="selection-helper">
+        {Array.from(selectedIndices).map(index => {
+          const wordObj = words.find(w => w.index === index);
+          return wordObj?.text + ' ';
+        })}
+      </div>
+    );
   };
   
   // Handle selection end (mouse up or touch end)
@@ -539,6 +618,7 @@ const ScriptureReading: React.FC = () => {
         </ScriptureReference>
         
         <ScriptureText
+          className="scripture-text"
           onMouseLeave={handleSelectionCancel}
           onTouchCancel={handleSelectionCancel}
         >
@@ -559,17 +639,7 @@ const ScriptureReading: React.FC = () => {
                 onMouseMove={(e) => handleSelectionMove(word.index, e)}
                 onMouseUp={(e) => handleSelectionEnd(e)}
                 onTouchStart={(e) => handleSelectionStart(word.index, e)}
-                onTouchMove={(e) => {
-                  // Get the element at the touch position
-                  const touch = e.touches[0];
-                  const element = document.elementFromPoint(touch.clientX, touch.clientY);
-                  
-                  // Find the index of the word that was touched
-                  const wordIndex = element?.getAttribute('data-index');
-                  if (wordIndex) {
-                    handleSelectionMove(parseInt(wordIndex), e);
-                  }
-                }}
+                onTouchMove={handleTouchMove}
                 onTouchEnd={(e) => handleSelectionEnd(e)}
                 data-index={word.index}
               >
@@ -581,8 +651,13 @@ const ScriptureReading: React.FC = () => {
       </ScriptureCard>
       
       <InstructionText>
-        Click to highlight individual words or drag to highlight phrases. Scroll down to reflect.
+        Click to highlight individual words or drag to highlight phrases (even across lines). Scroll down to reflect.
       </InstructionText>
+      
+      {/* Add some helper text specifically for multi-line selection */}
+      <ScrollHintText>
+        To select words across lines, start on the first word and drag to the last word of your phrase.
+      </ScrollHintText>
       
       {highlightedWords.length > 0 && (
         <>
