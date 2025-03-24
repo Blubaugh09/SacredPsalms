@@ -20,6 +20,13 @@ const defaultSession: MeditationSession = {
   breathCount: 0
 };
 
+// Add groupId to the HighlightedWord interface
+export interface HighlightedWord {
+  word: string;
+  index: number;
+  groupId?: number;
+}
+
 interface MeditationContextType {
   session: MeditationSession;
   isLoading: boolean;
@@ -27,7 +34,7 @@ interface MeditationContextType {
   loadRandomPsalm: () => Promise<void>;
   nextStep: () => void;
   prevStep: () => void;
-  highlightWord: (word: string, index: number) => void;
+  highlightWord: (word: string, index: number, groupId?: number) => void;
   removeHighlight: (index: number) => void;
   resetHighlights: () => void;
   markBreathComplete: () => void;
@@ -174,10 +181,13 @@ export const MeditationProvider: React.FC<{ children: ReactNode }> = ({ children
   }, [translation]);
 
   // Highlight a word in the scripture
-  const highlightWord = useCallback((word: string, index: number) => {
+  const highlightWord = useCallback((word: string, index: number, groupId?: number) => {
     setSession(prev => ({
       ...prev,
-      highlightedWords: [...prev.highlightedWords, { word, index }]
+      highlightedWords: [
+        ...prev.highlightedWords,
+        { word, index, groupId }
+      ]
     }));
   }, []);
 

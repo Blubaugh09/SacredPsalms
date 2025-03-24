@@ -242,6 +242,10 @@ const ScriptureReading: React.FC = () => {
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStartIndex, setSelectionStartIndex] = useState<number | null>(null);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  const [selectionGroupCounter, setSelectionGroupCounter] = useState(1);
+  const [phrases, setPhrases] = useState<HighlightedPhrase[]>([]);
+  const [lastTapTime, setLastTapTime] = useState(0);
+  const tapTimeout = useRef<NodeJS.Timeout | null>(null);
   
   // Format the reference to only show book and chapter
   const simplifiedReference = scripture.reference.split(':')[0];
@@ -296,6 +300,90 @@ const ScriptureReading: React.FC = () => {
     };
   }, [highlightedWords.length, showReflection]);
   
+  // Group highlighted words into phrases
+  useEffect(() => {
+    // Group words by their groupId
+    const groups = new Map<number | undefined, HighlightedWord[]>();
+    
+    highlightedWords.forEach(word => {
+      const groupId = word.groupId || 0; // Use 0 for ungrouped words
+      if (!groups.has(groupId)) {
+        groups.set(groupId, []);
+      }
+      groups.get(groupId)?.push(word);
+    });
+    
+    // Sort words within each group by index
+    const sortedPhrases: HighlightedPhrase[] = [];
+    
+    groups.forEach((words, groupId) => {
+      // Sort words in the group by their index to maintain sentence order
+      const sortedWords = [...words].sort((a, b) => a.index - b.index);
+      
+      // For single words or ungrouped words
+      if (groupId === 0 || sortedWords.length === 1) {
+        sortedWords.forEach(word => {
+          sortedPhrases.push({
+            words: [word],
+            text: word.word
+          });
+        });
+      } else {
+        // For multi-word phrases
+        const phraseText = sortedWords.map(w => w.word).join(' ');
+        sortedPhrases.push({
+          words: sortedWords,
+          text: phraseText
+        });
+      }
+    });
+    
+    // Sort phrases by the index of their first word
+    sortedPhrases.sort((a, b) => {
+      const aIndex = a.words[0]?.index || 0;
+      const bIndex = b.words[0]?.index || 0;
+      return aIndex - bIndex;
+    });
+    
+    setPhrases(sortedPhrases);
+  }, [highlightedWords]);
+  
+  // Handle taps with a small delay to differentiate between taps and drag starts
+  const handleTap = (word: string, index: number) => {
+    const now = Date.now();
+    const isDoubleTap = now - lastTapTime < 300;
+    setLastTapTime(now);
+    
+    // Clear any existing timeout
+    if (tapTimeout.current) {
+      clearTimeout(tapTimeout.current);
+    }
+    
+    // If it's a double-tap, handle it immediately
+    if (isDoubleTap) {
+      handleWordClick(word, index);
+      return;
+    }
+    
+    // For single taps, wait a bit to make sure it's not the start of a drag
+    tapTimeout.current = setTimeout(() => {
+      if (!isSelecting) {
+        handleWordClick(word, index);
+      }
+    }, 150);
+  };
+  
+  // Handle word click (toggle highlight for individual words)
+  const handleWordClick = (word: string, index: number) => {
+    // If already highlighted, remove highlight
+    if (highlightedWords.some(hw => hw.index === index)) {
+      removeHighlight(index);
+    } else {
+      // Otherwise, add highlight (with no groupId for individual selections)
+      highlightWord(word, index);
+    }
+  };
+  
   // Handle selection start (mouse down or touch start)
   const handleSelectionStart = (index: number) => {
     setIsSelecting(true);
@@ -326,18 +414,33 @@ const ScriptureReading: React.FC = () => {
   
   // Handle selection end (mouse up or touch end)
   const handleSelectionEnd = () => {
-    if (!isSelecting) return;
+    if (!isSelecting || selectedIndices.size === 0) {
+      setIsSelecting(false);
+      setSelectionStartIndex(null);
+      setSelectedIndices(new Set());
+      return;
+    }
+    
+    // Only treat as a multi-select if more than one word is selected
+    const isMultiSelect = selectedIndices.size > 1;
+    const currentGroupId = isMultiSelect ? selectionGroupCounter : undefined;
     
     // Apply highlights to all selected words
     selectedIndices.forEach(index => {
       const wordObj = words.find(w => w.index === index);
       if (wordObj) {
-        // If already highlighted, leave it highlighted
+        // Skip if already highlighted
         if (!highlightedWords.some(hw => hw.index === index)) {
-          highlightWord(wordObj.text, index);
+          // Pass the groupId for multi-selections
+          highlightWord(wordObj.text, index, currentGroupId);
         }
       }
     });
+    
+    // Increment group counter for next selection
+    if (isMultiSelect) {
+      setSelectionGroupCounter(prev => prev + 1);
+    }
     
     // Reset selection state
     setIsSelecting(false);
@@ -345,22 +448,11 @@ const ScriptureReading: React.FC = () => {
     setSelectedIndices(new Set());
   };
   
-  // Handle cancel selection (e.g., if user drags outside the container)
+  // Handle cancel selection
   const handleSelectionCancel = () => {
     setIsSelecting(false);
     setSelectionStartIndex(null);
     setSelectedIndices(new Set());
-  };
-  
-  // Single word click handler (still needed for toggling highlights)
-  const handleWordClick = (word: string, index: number) => {
-    // If already highlighted, remove highlight
-    if (highlightedWords.some(hw => hw.index === index)) {
-      removeHighlight(index);
-    } else {
-      // Otherwise, add highlight
-      highlightWord(word, index);
-    }
   };
   
   const handleRestart = () => {
@@ -371,9 +463,6 @@ const ScriptureReading: React.FC = () => {
     // Scroll back to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  
-  // Sort highlighted words by their index to maintain the original order
-  const sortedWords = [...highlightedWords].sort((a, b) => a.index - b.index);
   
   // Prevent default text selection behavior
   useEffect(() => {
@@ -414,8 +503,13 @@ const ScriptureReading: React.FC = () => {
               <WordSpan
                 key={idx}
                 $isHighlighted={isHighlighted || isCurrentlySelected}
-                onClick={() => handleWordClick(word.text, word.index)}
-                onMouseDown={() => handleSelectionStart(word.index)}
+                onClick={() => handleTap(word.text, word.index)}
+                onMouseDown={(e) => {
+                  // Start selection only on left-click drag
+                  if (e.button === 0) {
+                    handleSelectionStart(word.index);
+                  }
+                }}
                 onMouseOver={() => handleSelectionMove(word.index)}
                 onMouseUp={handleSelectionEnd}
                 onTouchStart={() => handleSelectionStart(word.index)}
@@ -441,7 +535,7 @@ const ScriptureReading: React.FC = () => {
       </ScriptureCard>
       
       <InstructionText>
-        {scripture.translation === 'ESV' ? 'Click or drag to highlight words. Scroll down to reflect on your highlighted words.' : 'Click or drag to highlight words. Scroll down to reflect on your highlighted words.'}
+        Click to highlight individual words or drag to highlight phrases. Scroll down to reflect.
       </InstructionText>
       
       {highlightedWords.length > 0 && (
@@ -459,13 +553,13 @@ const ScriptureReading: React.FC = () => {
         <ReflectionTitle>Your Sacred Words</ReflectionTitle>
         
         <WordsContainer>
-          {sortedWords.map((word, index) => (
+          {phrases.map((phrase, index) => (
             <WordDisplay 
               key={index} 
               $delay={index * 1.2}
               $isVisible={animateWords}
             >
-              {word.word}
+              {phrase.text}
             </WordDisplay>
           ))}
         </WordsContainer>
