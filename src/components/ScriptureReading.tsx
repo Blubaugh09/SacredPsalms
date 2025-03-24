@@ -251,6 +251,12 @@ const ScriptureReading: React.FC = () => {
   const [dragDistance, setDragDistance] = useState(0);
   const [dragStartPosition, setDragStartPosition] = useState({ x: 0, y: 0 });
   
+  // Add these new state variables for touch handling
+  const [touchTimer, setTouchTimer] = useState<NodeJS.Timeout | null>(null);
+  const [touchStartPos, setTouchStartPos] = useState({ x: 0, y: 0 });
+  const [isScrolling, setIsScrolling] = useState(false);
+  const touchTimeoutDuration = 200; // ms to wait before considering a touch as a tap
+  
   // Format the reference to only show book and chapter
   const simplifiedReference = scripture.reference.split(':')[0];
   
@@ -456,82 +462,83 @@ const ScriptureReading: React.FC = () => {
     setSelectedIndices(newSelectedIndices);
   };
   
-  // Enhance the touch movement handling to better track across lines
-  const handleTouchMove = (event: React.TouchEvent) => {
-    if (!isSelecting) return;
+  // Handle the start of a touch
+  const handleTouchStart = (word: string, index: number, e: React.TouchEvent) => {
+    // Store the starting position
+    const touch = e.touches[0];
+    setTouchStartPos({ x: touch.clientX, y: touch.clientY });
     
-    const touch = event.touches[0];
-    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    // Reset scrolling state
+    setIsScrolling(false);
     
-    // Get elements at touch position
-    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    // Clear any existing timer
+    if (touchTimer) clearTimeout(touchTimer);
     
-    // Find the word under the touch point
-    if (element) {
-      const wordIndex = element.getAttribute('data-index');
-      if (wordIndex) {
-        handleSelectionMove(parseInt(wordIndex), event);
-      } else {
-        // If touch is on the container but not on a word,
-        // find the closest word in the direction of the drag
-        const scriptureElement = document.querySelector('.scripture-text');
-        if (scriptureElement) {
-          const rect = scriptureElement.getBoundingClientRect();
-          
-          // Determine if touch is in the container
-          if (
-            touch.clientX >= rect.left && 
-            touch.clientX <= rect.right && 
-            touch.clientY >= rect.top && 
-            touch.clientY <= rect.bottom
-          ) {
-            // Get all word elements
-            const wordElements = scriptureElement.querySelectorAll('[data-index]');
-            
-            // Find closest element to touch point
-            let closestElement = null;
-            let minDistance = Infinity;
-            
-            wordElements.forEach(el => {
-              const elRect = el.getBoundingClientRect();
-              const centerX = elRect.left + elRect.width / 2;
-              const centerY = elRect.top + elRect.height / 2;
-              
-              const distance = Math.sqrt(
-                Math.pow(centerX - touch.clientX, 2) + 
-                Math.pow(centerY - touch.clientY, 2)
-              );
-              
-              if (distance < minDistance) {
-                minDistance = distance;
-                closestElement = el;
-              }
-            });
-            
-            if (closestElement) {
-              const closestIndex = closestElement.getAttribute('data-index');
-              if (closestIndex) {
-                handleSelectionMove(parseInt(closestIndex), event);
-              }
-            }
-          }
+    // For multi-touch (potential zooming or scrolling gestures), don't start selection
+    if (e.touches.length > 1) {
+      return;
+    }
+    
+    // Start a timer - if the user doesn't move much and keeps their finger down,
+    // we'll consider it a tap for highlighting
+    const timer = setTimeout(() => {
+      if (!isScrolling) {
+        // If we haven't detected scrolling by now, start selection
+        handleSelectionStart(index, e);
+      }
+    }, touchTimeoutDuration);
+    
+    setTouchTimer(timer);
+  };
+  
+  // Handle touch movement
+  const handleTouchMove = (e: React.TouchEvent) => {
+    // Get current touch position
+    const touch = e.touches[0];
+    const currentPos = { x: touch.clientX, y: touch.clientY };
+    
+    // Calculate distance moved
+    const distance = Math.sqrt(
+      Math.pow(currentPos.x - touchStartPos.x, 2) + 
+      Math.pow(currentPos.y - touchStartPos.y, 2)
+    );
+    
+    // If moved more than threshold, consider it scrolling
+    const scrollThreshold = 10; // pixels
+    if (distance > scrollThreshold) {
+      setIsScrolling(true);
+      
+      // If timer is still active, clear it to prevent highlight
+      if (touchTimer) {
+        clearTimeout(touchTimer);
+        setTouchTimer(null);
+      }
+      
+      // If already selecting, handle the selection movement
+      if (isSelecting) {
+        // Find the element under the current touch position
+        const element = document.elementFromPoint(touch.clientX, touch.clientY);
+        const wordIndex = element?.getAttribute('data-index');
+        
+        if (wordIndex) {
+          handleSelectionMove(parseInt(wordIndex), e);
         }
       }
     }
   };
   
-  // Add a visual helper for multi-line selection
-  const renderSelectionHelper = () => {
-    if (!isSelecting || selectedIndices.size <= 1) return null;
+  // Handle the end of a touch
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    // Clear any pending timer
+    if (touchTimer) {
+      clearTimeout(touchTimer);
+      setTouchTimer(null);
+    }
     
-    return (
-      <div className="selection-helper">
-        {Array.from(selectedIndices).map(index => {
-          const wordObj = words.find(w => w.index === index);
-          return wordObj?.text + ' ';
-        })}
-      </div>
-    );
+    // If we were selecting (drag selection), complete it
+    if (isSelecting) {
+      handleSelectionEnd(e);
+    }
   };
   
   // Handle selection end (mouse up or touch end)
@@ -610,6 +617,13 @@ const ScriptureReading: React.FC = () => {
     };
   }, []);
   
+  // Clear any pending touch timer when component unmounts
+  useEffect(() => {
+    return () => {
+      if (touchTimer) clearTimeout(touchTimer);
+    };
+  }, [touchTimer]);
+  
   return (
     <ReadingContainer>
       <ScriptureCard>
@@ -635,12 +649,13 @@ const ScriptureReading: React.FC = () => {
               <WordSpan
                 key={idx}
                 $isHighlighted={isHighlighted || isCurrentlySelected}
+                onClick={() => {}} // Disable direct click - we'll handle via touch/mouse events
                 onMouseDown={(e) => handleSelectionStart(word.index, e)}
                 onMouseMove={(e) => handleSelectionMove(word.index, e)}
                 onMouseUp={(e) => handleSelectionEnd(e)}
-                onTouchStart={(e) => handleSelectionStart(word.index, e)}
+                onTouchStart={(e) => handleTouchStart(word.text, word.index, e)}
                 onTouchMove={handleTouchMove}
-                onTouchEnd={(e) => handleSelectionEnd(e)}
+                onTouchEnd={handleTouchEnd}
                 data-index={word.index}
               >
                 {word.text}
