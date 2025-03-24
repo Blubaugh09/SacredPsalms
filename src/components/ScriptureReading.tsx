@@ -66,6 +66,9 @@ const ScriptureText = styled.div`
   color: var(--card-foreground);
   text-align: left;
   white-space: normal;
+  user-select: none; /* Prevent default text selection */
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   
   @media (min-width: 768px) {
     font-size: 1.8rem;
@@ -235,6 +238,11 @@ const ScriptureReading: React.FC = () => {
   const reflectionRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
   
+  // States for drag selection
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionStartIndex, setSelectionStartIndex] = useState<number | null>(null);
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  
   // Format the reference to only show book and chapter
   const simplifiedReference = scripture.reference.split(':')[0];
   
@@ -288,6 +296,63 @@ const ScriptureReading: React.FC = () => {
     };
   }, [highlightedWords.length, showReflection]);
   
+  // Handle selection start (mouse down or touch start)
+  const handleSelectionStart = (index: number) => {
+    setIsSelecting(true);
+    setSelectionStartIndex(index);
+    setSelectedIndices(new Set([index]));
+  };
+  
+  // Handle selection movement (mouse over or touch move)
+  const handleSelectionMove = (index: number) => {
+    if (!isSelecting || selectionStartIndex === null) return;
+    
+    // Determine the range of indices to select
+    const start = Math.min(selectionStartIndex, index);
+    const end = Math.max(selectionStartIndex, index);
+    
+    // Create a new set with all indices in the range
+    const newSelectedIndices = new Set<number>();
+    for (let i = start; i <= end; i++) {
+      // Only add indices that correspond to actual words (not spaces)
+      const wordAtIndex = words.find(w => w.index === i);
+      if (wordAtIndex && wordAtIndex.text.trim() !== '') {
+        newSelectedIndices.add(i);
+      }
+    }
+    
+    setSelectedIndices(newSelectedIndices);
+  };
+  
+  // Handle selection end (mouse up or touch end)
+  const handleSelectionEnd = () => {
+    if (!isSelecting) return;
+    
+    // Apply highlights to all selected words
+    selectedIndices.forEach(index => {
+      const wordObj = words.find(w => w.index === index);
+      if (wordObj) {
+        // If already highlighted, leave it highlighted
+        if (!highlightedWords.some(hw => hw.index === index)) {
+          highlightWord(wordObj.text, index);
+        }
+      }
+    });
+    
+    // Reset selection state
+    setIsSelecting(false);
+    setSelectionStartIndex(null);
+    setSelectedIndices(new Set());
+  };
+  
+  // Handle cancel selection (e.g., if user drags outside the container)
+  const handleSelectionCancel = () => {
+    setIsSelecting(false);
+    setSelectionStartIndex(null);
+    setSelectedIndices(new Set());
+  };
+  
+  // Single word click handler (still needed for toggling highlights)
   const handleWordClick = (word: string, index: number) => {
     // If already highlighted, remove highlight
     if (highlightedWords.some(hw => hw.index === index)) {
@@ -310,6 +375,21 @@ const ScriptureReading: React.FC = () => {
   // Sort highlighted words by their index to maintain the original order
   const sortedWords = [...highlightedWords].sort((a, b) => a.index - b.index);
   
+  // Prevent default text selection behavior
+  useEffect(() => {
+    const preventDefault = (e: Event) => {
+      e.preventDefault();
+    };
+    
+    // Add event listeners to prevent text selection
+    document.addEventListener('selectstart', preventDefault);
+    
+    return () => {
+      // Clean up event listeners
+      document.removeEventListener('selectstart', preventDefault);
+    };
+  }, []);
+  
   return (
     <ReadingContainer>
       <ScriptureCard>
@@ -317,7 +397,10 @@ const ScriptureReading: React.FC = () => {
           {simplifiedReference} ({scripture.translation})
         </ScriptureReference>
         
-        <ScriptureText>
+        <ScriptureText
+          onMouseLeave={handleSelectionCancel}
+          onTouchCancel={handleSelectionCancel}
+        >
           {words.map((word, idx) => {
             // Skip rendering spaces as clickable spans
             if (word.text.trim() === '') {
@@ -325,12 +408,30 @@ const ScriptureReading: React.FC = () => {
             }
             
             const isHighlighted = highlightedWords.some(hw => hw.index === word.index);
+            const isCurrentlySelected = selectedIndices.has(word.index);
             
             return (
               <WordSpan
                 key={idx}
-                $isHighlighted={isHighlighted}
+                $isHighlighted={isHighlighted || isCurrentlySelected}
                 onClick={() => handleWordClick(word.text, word.index)}
+                onMouseDown={() => handleSelectionStart(word.index)}
+                onMouseOver={() => handleSelectionMove(word.index)}
+                onMouseUp={handleSelectionEnd}
+                onTouchStart={() => handleSelectionStart(word.index)}
+                onTouchMove={(e) => {
+                  // Get the element at the touch position
+                  const touch = e.touches[0];
+                  const element = document.elementFromPoint(touch.clientX, touch.clientY);
+                  
+                  // Find the index of the word that was touched
+                  const wordIndex = element?.getAttribute('data-index');
+                  if (wordIndex) {
+                    handleSelectionMove(parseInt(wordIndex));
+                  }
+                }}
+                onTouchEnd={handleSelectionEnd}
+                data-index={word.index}
               >
                 {word.text}
               </WordSpan>
@@ -340,10 +441,8 @@ const ScriptureReading: React.FC = () => {
       </ScriptureCard>
       
       <InstructionText>
-        {scripture.translation === 'ESV' ? 'Click on a word to highlight it. Scroll down to reflect on your highlighted words.' : 'Click on a word to highlight it. Scroll down to reflect on your highlighted words.'}
+        {scripture.translation === 'ESV' ? 'Click or drag to highlight words. Scroll down to reflect on your highlighted words.' : 'Click or drag to highlight words. Scroll down to reflect on your highlighted words.'}
       </InstructionText>
-      
-
       
       {highlightedWords.length > 0 && (
         <>
@@ -370,8 +469,6 @@ const ScriptureReading: React.FC = () => {
             </WordDisplay>
           ))}
         </WordsContainer>
-        
-
         
         <PrayerReminder>
           <PrayerIcon>
