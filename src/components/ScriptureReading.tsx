@@ -251,11 +251,10 @@ const ScriptureReading: React.FC = () => {
   const [dragDistance, setDragDistance] = useState(0);
   const [dragStartPosition, setDragStartPosition] = useState({ x: 0, y: 0 });
   
-  // Add these new state variables for touch handling
-  const [touchTimer, setTouchTimer] = useState<NodeJS.Timeout | null>(null);
-  const [touchStartPos, setTouchStartPos] = useState({ x: 0, y: 0 });
-  const [isScrolling, setIsScrolling] = useState(false);
-  const touchTimeoutDuration = 200; // ms to wait before considering a touch as a tap
+  // Simplified touch handling variables
+  const [initialTouchPos, setInitialTouchPos] = useState({ x: 0, y: 0 });
+  const [isTouchActive, setIsTouchActive] = useState(false);
+  const touchStartTimeRef = useRef(0);
   
   // Format the reference to only show book and chapter
   const simplifiedReference = scripture.reference.split(':')[0];
@@ -383,38 +382,95 @@ const ScriptureReading: React.FC = () => {
     }, 150);
   };
   
-  // Simplified handler for word click/tap
-  const handleWordClick = (word: string, index: number, event?: React.MouseEvent | React.TouchEvent) => {
-    // If the event exists, prevent default behavior
-    if (event) {
-      event.preventDefault();
+  // Handle the start of a touch
+  const handleTouchStart = (word: string, index: number, e: React.TouchEvent) => {
+    // Store the starting position and time
+    const touch = e.touches[0];
+    setInitialTouchPos({ x: touch.clientX, y: touch.clientY });
+    touchStartTimeRef.current = Date.now();
+    setIsTouchActive(true);
+    
+    // Immediately start the selection process
+    handleSelectionStart(index, e);
+  };
+  
+  // Handle touch movement - simplified to work better with selection
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isTouchActive || !isSelecting) return;
+    
+    const touch = e.touches[0];
+    const currentPos = { x: touch.clientX, y: touch.clientY };
+    
+    // Calculate movement distance
+    const distance = Math.sqrt(
+      Math.pow(currentPos.x - initialTouchPos.x, 2) + 
+      Math.pow(currentPos.y - initialTouchPos.y, 2)
+    );
+    
+    // If moved a significant distance, it's a drag operation
+    const dragThreshold = 15; // pixels
+    const timeElapsed = Date.now() - touchStartTimeRef.current;
+    
+    if (distance > dragThreshold || timeElapsed > 300) {
+      // Get the element at the touch position
+      const element = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (element) {
+        const wordIndex = element.getAttribute('data-index');
+        if (wordIndex) {
+          handleSelectionMove(parseInt(wordIndex), e);
+        }
+      }
     }
     
-    // If already highlighted, remove highlight
+    // Prevent default to avoid scrolling while selecting
+    if (isSelecting && selectedIndices.size > 1) {
+      e.preventDefault();
+    }
+  };
+  
+  // Handle the end of a touch
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const timeElapsed = Date.now() - touchStartTimeRef.current;
+    const hasSelection = selectedIndices.size > 1;
+    
+    // If this was a quick tap and no multi-selection, treat as a simple word tap
+    if (timeElapsed < 300 && !hasSelection && selectionStartIndex !== null) {
+      const wordObj = words.find(w => w.index === selectionStartIndex);
+      if (wordObj) {
+        handleWordClick(wordObj.text, selectionStartIndex);
+      }
+    } else if (isSelecting) {
+      // Otherwise complete the selection process
+      handleSelectionEnd(e);
+    }
+    
+    setIsTouchActive(false);
+  };
+  
+  // Simple word click handler to toggle highlighting
+  const handleWordClick = (word: string, index: number) => {
+    // Toggle highlighting
     if (highlightedWords.some(hw => hw.index === index)) {
       removeHighlight(index);
     } else {
-      // Otherwise, add highlight (with no groupId for individual selections)
       highlightWord(word, index);
     }
   };
   
   // Handle selection start (mouse down or touch start)
   const handleSelectionStart = (index: number, event: React.MouseEvent | React.TouchEvent) => {
-    // Capture start position for measuring drag distance
-    if ('touches' in event) {
-      // Touch event
-      const touch = event.touches[0];
-      setDragStartPosition({ x: touch.clientX, y: touch.clientY });
-    } else {
-      // Mouse event
-      setDragStartPosition({ x: event.clientX, y: event.clientY });
-    }
-    
     setDragDistance(0);
     setIsSelecting(true);
     setSelectionStartIndex(index);
     setSelectedIndices(new Set([index]));
+    
+    // Capture start position for measuring drag distance
+    if ('touches' in event) {
+      const touch = event.touches[0];
+      setDragStartPosition({ x: touch.clientX, y: touch.clientY });
+    } else {
+      setDragStartPosition({ x: event.clientX, y: event.clientY });
+    }
   };
   
   // Update the handleSelectionMove function to better handle multi-line selections
@@ -460,85 +516,6 @@ const ScriptureReading: React.FC = () => {
     }
     
     setSelectedIndices(newSelectedIndices);
-  };
-  
-  // Handle the start of a touch
-  const handleTouchStart = (word: string, index: number, e: React.TouchEvent) => {
-    // Store the starting position
-    const touch = e.touches[0];
-    setTouchStartPos({ x: touch.clientX, y: touch.clientY });
-    
-    // Reset scrolling state
-    setIsScrolling(false);
-    
-    // Clear any existing timer
-    if (touchTimer) clearTimeout(touchTimer);
-    
-    // For multi-touch (potential zooming or scrolling gestures), don't start selection
-    if (e.touches.length > 1) {
-      return;
-    }
-    
-    // Start a timer - if the user doesn't move much and keeps their finger down,
-    // we'll consider it a tap for highlighting
-    const timer = setTimeout(() => {
-      if (!isScrolling) {
-        // If we haven't detected scrolling by now, start selection
-        handleSelectionStart(index, e);
-      }
-    }, touchTimeoutDuration);
-    
-    setTouchTimer(timer);
-  };
-  
-  // Handle touch movement
-  const handleTouchMove = (e: React.TouchEvent) => {
-    // Get current touch position
-    const touch = e.touches[0];
-    const currentPos = { x: touch.clientX, y: touch.clientY };
-    
-    // Calculate distance moved
-    const distance = Math.sqrt(
-      Math.pow(currentPos.x - touchStartPos.x, 2) + 
-      Math.pow(currentPos.y - touchStartPos.y, 2)
-    );
-    
-    // If moved more than threshold, consider it scrolling
-    const scrollThreshold = 10; // pixels
-    if (distance > scrollThreshold) {
-      setIsScrolling(true);
-      
-      // If timer is still active, clear it to prevent highlight
-      if (touchTimer) {
-        clearTimeout(touchTimer);
-        setTouchTimer(null);
-      }
-      
-      // If already selecting, handle the selection movement
-      if (isSelecting) {
-        // Find the element under the current touch position
-        const element = document.elementFromPoint(touch.clientX, touch.clientY);
-        const wordIndex = element?.getAttribute('data-index');
-        
-        if (wordIndex) {
-          handleSelectionMove(parseInt(wordIndex), e);
-        }
-      }
-    }
-  };
-  
-  // Handle the end of a touch
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    // Clear any pending timer
-    if (touchTimer) {
-      clearTimeout(touchTimer);
-      setTouchTimer(null);
-    }
-    
-    // If we were selecting (drag selection), complete it
-    if (isSelecting) {
-      handleSelectionEnd(e);
-    }
   };
   
   // Handle selection end (mouse up or touch end)
@@ -617,13 +594,6 @@ const ScriptureReading: React.FC = () => {
     };
   }, []);
   
-  // Clear any pending touch timer when component unmounts
-  useEffect(() => {
-    return () => {
-      if (touchTimer) clearTimeout(touchTimer);
-    };
-  }, [touchTimer]);
-  
   return (
     <ReadingContainer>
       <ScriptureCard>
@@ -649,7 +619,6 @@ const ScriptureReading: React.FC = () => {
               <WordSpan
                 key={idx}
                 $isHighlighted={isHighlighted || isCurrentlySelected}
-                onClick={() => {}} // Disable direct click - we'll handle via touch/mouse events
                 onMouseDown={(e) => handleSelectionStart(word.index, e)}
                 onMouseMove={(e) => handleSelectionMove(word.index, e)}
                 onMouseUp={(e) => handleSelectionEnd(e)}
