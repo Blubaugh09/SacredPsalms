@@ -247,6 +247,10 @@ const ScriptureReading: React.FC = () => {
   const [lastTapTime, setLastTapTime] = useState(0);
   const tapTimeout = useRef<NodeJS.Timeout | null>(null);
   
+  // Add these new state variables
+  const [dragDistance, setDragDistance] = useState(0);
+  const [dragStartPosition, setDragStartPosition] = useState({ x: 0, y: 0 });
+  
   // Format the reference to only show book and chapter
   const simplifiedReference = scripture.reference.split(':')[0];
   
@@ -373,8 +377,13 @@ const ScriptureReading: React.FC = () => {
     }, 150);
   };
   
-  // Handle word click (toggle highlight for individual words)
-  const handleWordClick = (word: string, index: number) => {
+  // Simplified handler for word click/tap
+  const handleWordClick = (word: string, index: number, event?: React.MouseEvent | React.TouchEvent) => {
+    // If the event exists, prevent default behavior
+    if (event) {
+      event.preventDefault();
+    }
+    
     // If already highlighted, remove highlight
     if (highlightedWords.some(hw => hw.index === index)) {
       removeHighlight(index);
@@ -385,15 +394,49 @@ const ScriptureReading: React.FC = () => {
   };
   
   // Handle selection start (mouse down or touch start)
-  const handleSelectionStart = (index: number) => {
+  const handleSelectionStart = (index: number, event: React.MouseEvent | React.TouchEvent) => {
+    // Capture start position for measuring drag distance
+    if ('touches' in event) {
+      // Touch event
+      const touch = event.touches[0];
+      setDragStartPosition({ x: touch.clientX, y: touch.clientY });
+    } else {
+      // Mouse event
+      setDragStartPosition({ x: event.clientX, y: event.clientY });
+    }
+    
+    setDragDistance(0);
     setIsSelecting(true);
     setSelectionStartIndex(index);
     setSelectedIndices(new Set([index]));
   };
   
-  // Handle selection movement (mouse over or touch move)
-  const handleSelectionMove = (index: number) => {
+  // Handle selection movement
+  const handleSelectionMove = (index: number, event?: React.MouseEvent | React.TouchEvent) => {
     if (!isSelecting || selectionStartIndex === null) return;
+    
+    // Calculate drag distance
+    if (event) {
+      let currentX = 0, currentY = 0;
+      
+      if ('touches' in event) {
+        // Touch event
+        const touch = event.touches[0];
+        currentX = touch.clientX;
+        currentY = touch.clientY;
+      } else {
+        // Mouse event
+        currentX = event.clientX;
+        currentY = event.clientY;
+      }
+      
+      const distance = Math.sqrt(
+        Math.pow(currentX - dragStartPosition.x, 2) + 
+        Math.pow(currentY - dragStartPosition.y, 2)
+      );
+      
+      setDragDistance(distance);
+    }
     
     // Determine the range of indices to select
     const start = Math.min(selectionStartIndex, index);
@@ -413,8 +456,17 @@ const ScriptureReading: React.FC = () => {
   };
   
   // Handle selection end (mouse up or touch end)
-  const handleSelectionEnd = () => {
-    if (!isSelecting || selectedIndices.size === 0) {
+  const handleSelectionEnd = (event?: React.MouseEvent | React.TouchEvent) => {
+    if (!isSelecting) return;
+    
+    // If it was just a tap/click (very little movement), handle as a single word click
+    if (dragDistance < 10 && selectedIndices.size <= 1 && selectionStartIndex !== null) {
+      const wordObj = words.find(w => w.index === selectionStartIndex);
+      if (wordObj) {
+        handleWordClick(wordObj.text, selectionStartIndex, event);
+      }
+      
+      // Reset selection state
       setIsSelecting(false);
       setSelectionStartIndex(null);
       setSelectedIndices(new Set());
@@ -503,16 +555,10 @@ const ScriptureReading: React.FC = () => {
               <WordSpan
                 key={idx}
                 $isHighlighted={isHighlighted || isCurrentlySelected}
-                onClick={() => handleTap(word.text, word.index)}
-                onMouseDown={(e) => {
-                  // Start selection only on left-click drag
-                  if (e.button === 0) {
-                    handleSelectionStart(word.index);
-                  }
-                }}
-                onMouseOver={() => handleSelectionMove(word.index)}
-                onMouseUp={handleSelectionEnd}
-                onTouchStart={() => handleSelectionStart(word.index)}
+                onMouseDown={(e) => handleSelectionStart(word.index, e)}
+                onMouseMove={(e) => handleSelectionMove(word.index, e)}
+                onMouseUp={(e) => handleSelectionEnd(e)}
+                onTouchStart={(e) => handleSelectionStart(word.index, e)}
                 onTouchMove={(e) => {
                   // Get the element at the touch position
                   const touch = e.touches[0];
@@ -521,10 +567,10 @@ const ScriptureReading: React.FC = () => {
                   // Find the index of the word that was touched
                   const wordIndex = element?.getAttribute('data-index');
                   if (wordIndex) {
-                    handleSelectionMove(parseInt(wordIndex));
+                    handleSelectionMove(parseInt(wordIndex), e);
                   }
                 }}
-                onTouchEnd={handleSelectionEnd}
+                onTouchEnd={(e) => handleSelectionEnd(e)}
                 data-index={word.index}
               >
                 {word.text}
