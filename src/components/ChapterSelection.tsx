@@ -156,6 +156,27 @@ const LoadingSpinner = styled.div`
   }
 `;
 
+const ResetButton = styled.button`
+  background: none;
+  border: none;
+  color: var(--medium-gray);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  margin-top: 1rem;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    color: var(--primary);
+    text-decoration: underline;
+  }
+  
+  @media (min-width: 768px) {
+    font-size: 0.9rem;
+  }
+`;
+
 const ChapterSelection: React.FC = () => {
   const { loadPsalm, loadRandomPsalm, isLoading } = useMeditation();
   const [readChapters, setReadChapters] = React.useState<number[]>([]);
@@ -192,6 +213,17 @@ const ChapterSelection: React.FC = () => {
     loadRandomPsalm();
   };
   
+  const handleResetHistory = () => {
+    if (window.confirm('Are you sure you want to reset your reading history? This cannot be undone.')) {
+      try {
+        localStorage.removeItem('readPsalms');
+        setReadChapters([]);
+      } catch (error) {
+        console.error('Error resetting reading history:', error);
+      }
+    }
+  };
+  
   return (
     <ChapterContainer>
       <TranslationSelector />
@@ -220,6 +252,12 @@ const ChapterSelection: React.FC = () => {
           <RandomButton onClick={handleRandomClick}>
             Select a random Psalm
           </RandomButton>
+          
+          {readChapters.length > 0 && (
+            <ResetButton onClick={handleResetHistory}>
+              Reset reading history
+            </ResetButton>
+          )}
         </>
       )}
     </ChapterContainer>
