@@ -177,7 +177,7 @@ const BreathingExercise: React.FC = () => {
               },);
             }
           }, 3000);
-        }, 1000);
+        }, 1800);
       }, 3000);
     };
     
