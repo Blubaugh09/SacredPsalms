@@ -238,13 +238,7 @@ const ScriptureReading: React.FC = () => {
   const reflectionRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
   
-  // Add these for long-press detection
-  const [isLongPressing, setIsLongPressing] = useState(false);
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const longPressDuration = 500; // milliseconds
-  const touchPositionRef = useRef({ x: 0, y: 0 });
-  
-  // States for drag selection
+  // Selection states
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStartIndex, setSelectionStartIndex] = useState<number | null>(null);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
@@ -253,9 +247,9 @@ const ScriptureReading: React.FC = () => {
   const [lastTapTime, setLastTapTime] = useState(0);
   const tapTimeout = useRef<NodeJS.Timeout | null>(null);
   
-  // Add these new state variables
-  const [dragDistance, setDragDistance] = useState(0);
-  const [dragStartPosition, setDragStartPosition] = useState({ x: 0, y: 0 });
+  // Touch handling variables
+  const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
+  const isScrollingRef = useRef(false);
   
   // Format the reference to only show book and chapter
   const simplifiedReference = scripture.reference.split(':')[0];
@@ -358,177 +352,83 @@ const ScriptureReading: React.FC = () => {
     setPhrases(sortedPhrases);
   }, [highlightedWords]);
   
-  // Clean up any timers when component unmounts
-  useEffect(() => {
-    return () => {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-      }
-    };
-  }, []);
-  
-  // Handle a touch start on a word
-  const handleTouchStart = (word: string, index: number, e: React.TouchEvent) => {
-    // Record the touch position
-    const touch = e.touches[0];
-    touchPositionRef.current = { x: touch.clientX, y: touch.clientY };
+  // Handle selection start
+  const handleSelectionStart = (index: number, e: React.TouchEvent | React.MouseEvent) => {
+    // Reset scrolling detection
+    isScrollingRef.current = false;
     
-    // Clear any existing timer
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
+    // Record start position and time
+    if ('touches' in e) {
+      const touch = e.touches[0];
+      touchStartRef.current = { 
+        x: touch.clientX, 
+        y: touch.clientY,
+        time: Date.now()
+      };
     }
     
-    // Start a timer for long press detection
-    longPressTimerRef.current = setTimeout(() => {
-      setIsLongPressing(true);
-      // Toggle highlight on long press
-      if (highlightedWords.some(hw => hw.index === index)) {
-        removeHighlight(index);
-      } else {
-        highlightWord(word, index);
-      }
-    }, longPressDuration);
-  };
-  
-  // Handle touch move to detect if user is trying to scroll
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!longPressTimerRef.current) return;
-    
-    // Get current position
-    const touch = e.touches[0];
-    const currentPos = { x: touch.clientX, y: touch.clientY };
-    
-    // Calculate movement distance
-    const distance = Math.sqrt(
-      Math.pow(currentPos.x - touchPositionRef.current.x, 2) + 
-      Math.pow(currentPos.y - touchPositionRef.current.y, 2)
-    );
-    
-    // If moved more than threshold, cancel the long press timer (user is scrolling)
-    const moveThreshold = 10; // pixels
-    if (distance > moveThreshold) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-      setIsLongPressing(false);
-    }
-  };
-  
-  // Handle touch end to clean up
-  const handleTouchEnd = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    setIsLongPressing(false);
-  };
-  
-  // Simple click handler for desktop users
-  const handleClick = (word: string, index: number) => {
-    // Toggle highlight on click (for desktop)
-    if (highlightedWords.some(hw => hw.index === index)) {
-      removeHighlight(index);
-    } else {
-      highlightWord(word, index);
-    }
-  };
-  
-  // Handle taps with a small delay to differentiate between taps and drag starts
-  const handleTap = (word: string, index: number) => {
-    const now = Date.now();
-    const isDoubleTap = now - lastTapTime < 300;
-    setLastTapTime(now);
-    
-    // Clear any existing timeout
-    if (tapTimeout.current) {
-      clearTimeout(tapTimeout.current);
-    }
-    
-    // If it's a double-tap, handle it immediately
-    if (isDoubleTap) {
-      handleWordClick(word, index);
-      return;
-    }
-    
-    // For single taps, wait a bit to make sure it's not the start of a drag
-    tapTimeout.current = setTimeout(() => {
-      if (!isSelecting) {
-        handleWordClick(word, index);
-      }
-    }, 150);
-  };
-  
-  // Simplified handler for word click/tap
-  const handleWordClick = (word: string, index: number, event?: React.MouseEvent | React.TouchEvent) => {
-    // If the event exists, prevent default behavior
-    if (event) {
-      event.preventDefault();
-    }
-    
-    // If already highlighted, remove highlight
-    if (highlightedWords.some(hw => hw.index === index)) {
-      removeHighlight(index);
-    } else {
-      // Otherwise, add highlight (with no groupId for individual selections)
-      highlightWord(word, index);
-    }
-  };
-  
-  // Handle selection start (mouse down or touch start)
-  const handleSelectionStart = (index: number, event: React.MouseEvent | React.TouchEvent) => {
-    // Capture start position for measuring drag distance
-    if ('touches' in event) {
-      // Touch event
-      const touch = event.touches[0];
-      setDragStartPosition({ x: touch.clientX, y: touch.clientY });
-    } else {
-      // Mouse event
-      setDragStartPosition({ x: event.clientX, y: event.clientY });
-    }
-    
-    setDragDistance(0);
+    // Start selection
     setIsSelecting(true);
     setSelectionStartIndex(index);
     setSelectedIndices(new Set([index]));
   };
   
-  // Update the handleSelectionMove function to better handle multi-line selections
-  const handleSelectionMove = (index: number, event?: React.MouseEvent | React.TouchEvent) => {
+  // Handle touch/mouse movement
+  const handleSelectionMove = (e: React.TouchEvent | React.MouseEvent) => {
     if (!isSelecting || selectionStartIndex === null) return;
     
-    // Calculate drag distance for determining if it's a click vs. drag
-    if (event) {
-      let currentX = 0, currentY = 0;
+    // For touch events
+    if ('touches' in e) {
+      const touch = e.touches[0];
+      const currentX = touch.clientX;
+      const currentY = touch.clientY;
+      const deltaX = Math.abs(currentX - touchStartRef.current.x);
+      const deltaY = Math.abs(currentY - touchStartRef.current.y);
       
-      if ('touches' in event) {
-        // Touch event
-        const touch = event.touches[0];
-        currentX = touch.clientX;
-        currentY = touch.clientY;
-      } else {
-        // Mouse event
-        currentX = event.clientX;
-        currentY = event.clientY;
+      // If movement is mostly vertical and significant, it's likely scrolling
+      if (deltaY > deltaX * 2 && deltaY > 15) {
+        isScrollingRef.current = true;
+        setIsSelecting(false);
+        setSelectedIndices(new Set());
+        return;
       }
       
-      const distance = Math.sqrt(
-        Math.pow(currentX - dragStartPosition.x, 2) + 
-        Math.pow(currentY - dragStartPosition.y, 2)
-      );
+      // If we confirmed it's scrolling, don't process selection
+      if (isScrollingRef.current) return;
       
-      setDragDistance(distance);
+      // Get the element at touch position
+      const element = document.elementFromPoint(currentX, currentY);
+      
+      if (element) {
+        const wordIndex = element.getAttribute('data-index');
+        if (wordIndex !== null) {
+          updateSelectedRange(parseInt(wordIndex));
+        }
+      }
+    } else {
+      // For mouse events, just pass the target element's data-index
+      const target = e.target as HTMLElement;
+      const wordIndex = target.getAttribute('data-index');
+      
+      if (wordIndex !== null) {
+        updateSelectedRange(parseInt(wordIndex));
+      }
     }
+  };
+  
+  // Update the range of selected words
+  const updateSelectedRange = (currentIndex: number) => {
+    if (selectionStartIndex === null) return;
     
-    // Determine the range of indices to select - this will work across lines
-    // since we're using the array indices which are in order regardless of display
-    const start = Math.min(selectionStartIndex, index);
-    const end = Math.max(selectionStartIndex, index);
+    // Determine range
+    const start = Math.min(selectionStartIndex, currentIndex);
+    const end = Math.max(selectionStartIndex, currentIndex);
     
-    // Create a new set with all indices in the range
+    // Create a new set with all indices in range
     const newSelectedIndices = new Set<number>();
     for (let i = start; i <= end; i++) {
-      // Only add indices that correspond to actual words (not spaces or punctuation by itself)
       const wordAtIndex = words.find(w => w.index === i);
-      if (wordAtIndex && wordAtIndex.text.trim() !== '' && /\w/.test(wordAtIndex.text)) {
+      if (wordAtIndex && wordAtIndex.text.trim() !== '') {
         newSelectedIndices.add(i);
       }
     }
@@ -536,56 +436,38 @@ const ScriptureReading: React.FC = () => {
     setSelectedIndices(newSelectedIndices);
   };
   
-  // Add a visual helper for multi-line selection
-  const renderSelectionHelper = () => {
-    if (!isSelecting || selectedIndices.size <= 1) return null;
-    
-    return (
-      <div className="selection-helper">
-        {Array.from(selectedIndices).map(index => {
-          const wordObj = words.find(w => w.index === index);
-          return wordObj?.text + ' ';
-        })}
-      </div>
-    );
-  };
-  
-  // Handle selection end (mouse up or touch end)
-  const handleSelectionEnd = (event?: React.MouseEvent | React.TouchEvent) => {
-    if (!isSelecting) return;
-    
-    // If it was just a tap/click (very little movement), handle as a single word click
-    if (dragDistance < 10 && selectedIndices.size <= 1 && selectionStartIndex !== null) {
-      const wordObj = words.find(w => w.index === selectionStartIndex);
-      if (wordObj) {
-        handleWordClick(wordObj.text, selectionStartIndex, event);
-      }
-      
-      // Reset selection state
+  // Handle selection end
+  const handleSelectionEnd = () => {
+    if (!isSelecting || isScrollingRef.current) {
       setIsSelecting(false);
-      setSelectionStartIndex(null);
       setSelectedIndices(new Set());
       return;
     }
     
-    // Only treat as a multi-select if more than one word is selected
-    const isMultiSelect = selectedIndices.size > 1;
-    const currentGroupId = isMultiSelect ? selectionGroupCounter : undefined;
-    
-    // Apply highlights to all selected words
-    selectedIndices.forEach(index => {
+    // If only one word is selected, toggle its highlight
+    if (selectedIndices.size === 1 && selectionStartIndex !== null) {
+      const index = selectionStartIndex;
       const wordObj = words.find(w => w.index === index);
+      
       if (wordObj) {
-        // Skip if already highlighted
-        if (!highlightedWords.some(hw => hw.index === index)) {
-          // Pass the groupId for multi-selections
-          highlightWord(wordObj.text, index, currentGroupId);
+        if (highlightedWords.some(hw => hw.index === index)) {
+          removeHighlight(index);
+        } else {
+          highlightWord(wordObj.text, index);
         }
       }
-    });
-    
-    // Increment group counter for next selection
-    if (isMultiSelect) {
+    } 
+    // If multiple words are selected, highlight them as a group
+    else if (selectedIndices.size > 1) {
+      const currentGroupId = selectionGroupCounter;
+      
+      selectedIndices.forEach(index => {
+        const wordObj = words.find(w => w.index === index);
+        if (wordObj && !highlightedWords.some(hw => hw.index === index)) {
+          highlightWord(wordObj.text, index, currentGroupId);
+        }
+      });
+      
       setSelectionGroupCounter(prev => prev + 1);
     }
     
@@ -595,11 +477,14 @@ const ScriptureReading: React.FC = () => {
     setSelectedIndices(new Set());
   };
   
-  // Handle cancel selection
-  const handleSelectionCancel = () => {
-    setIsSelecting(false);
-    setSelectionStartIndex(null);
-    setSelectedIndices(new Set());
+  // Simple click handler for desktop
+  const handleClick = (word: string, index: number) => {
+    // Toggle highlight on click
+    if (highlightedWords.some(hw => hw.index === index)) {
+      removeHighlight(index);
+    } else {
+      highlightWord(word, index);
+    }
   };
   
   const handleRestart = () => {
@@ -633,11 +518,7 @@ const ScriptureReading: React.FC = () => {
           {simplifiedReference} ({scripture.translation})
         </ScriptureReference>
         
-        <ScriptureText
-          className="scripture-text"
-          onMouseLeave={handleSelectionCancel}
-          onTouchCancel={handleSelectionCancel}
-        >
+        <ScriptureText className="scripture-text">
           {words.map((word, idx) => {
             // Skip rendering spaces as clickable spans
             if (word.text.trim() === '') {
@@ -657,15 +538,13 @@ const ScriptureReading: React.FC = () => {
                     handleClick(word.text, word.index);
                   }
                 }}
-                onTouchStart={(e) => {
-                  // Only handle touch for touch devices
-                  if (!window.matchMedia('(hover: hover)').matches) {
-                    handleTouchStart(word.text, word.index, e);
-                  }
+                onTouchStart={(e) => handleSelectionStart(word.index, e)}
+                onTouchMove={handleSelectionMove}
+                onTouchEnd={handleSelectionEnd}
+                onTouchCancel={() => {
+                  setIsSelecting(false);
+                  setSelectedIndices(new Set());
                 }}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-                onTouchCancel={handleTouchEnd}
                 data-index={word.index}
               >
                 {word.text}
@@ -678,7 +557,7 @@ const ScriptureReading: React.FC = () => {
       <InstructionText>
         {window.matchMedia('(hover: hover)').matches 
           ? 'Click on words to highlight them. Scroll down to reflect.' 
-          : 'Touch and hold on words to highlight them. Scroll down to reflect.'}
+          : 'Tap to highlight words or press and slide to select multiple words. Scroll down to reflect.'}
       </InstructionText>
       
       {/* Add some helper text specifically for multi-line selection */}
