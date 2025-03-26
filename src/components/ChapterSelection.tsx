@@ -177,13 +177,32 @@ const ResetButton = styled.button`
   }
 `;
 
-// New styled components for categories
+// Updated CategoryContainer with better mobile support
 const CategoryContainer = styled.div`
   width: 100%;
   max-width: 850px;
   margin-bottom: 1.5rem;
+  position: relative;
+  
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
+    width: 30px;
+    background: linear-gradient(to right, transparent, var(--background));
+    pointer-events: none;
+    opacity: 0.8;
+  }
+`;
+
+const CategoryScrollArea = styled.div`
   overflow-x: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  padding: 8px 4px;
+  margin: 0 -4px;
   
   /* Hide scrollbar but allow scrolling */
   scrollbar-width: none;
@@ -195,8 +214,8 @@ const CategoryContainer = styled.div`
 const CategoryList = styled.div`
   display: flex;
   gap: 8px;
-  padding: 4px 0;
-  min-width: min-content;
+  padding-bottom: 4px; /* Space for scroll bounce */
+  width: max-content; /* Allow horizontal expansion */
 `;
 
 const CategoryButton = styled.button<{ $active: boolean }>`
@@ -204,20 +223,29 @@ const CategoryButton = styled.button<{ $active: boolean }>`
   color: ${props => props.$active ? '#000000' : 'var(--primary)'};
   border: 1px solid var(--accent);
   border-radius: 20px;
-  padding: 6px 12px;
-  font-size: 0.8rem;
+  padding: 10px 16px; /* Larger touch target */
+  font-size: 0.9rem;
   white-space: nowrap;
   cursor: pointer;
   transition: all 0.2s ease;
+  min-width: 80px; /* Ensure minimum tap target size */
   
   &:hover {
     background-color: var(--accent);
     color: #000000;
   }
   
+  &:first-child {
+    margin-left: 4px; /* Add padding at start */
+  }
+  
+  &:last-child {
+    margin-right: 20px; /* Add padding at end to account for fade gradient */
+  }
+  
   @media (min-width: 768px) {
     font-size: 0.9rem;
-    padding: 6px 14px;
+    padding: 8px 16px;
   }
 `;
 
@@ -229,20 +257,22 @@ const HighlightedGrid = styled.div`
 const CategoryInfo = styled.div`
   text-align: center;
   margin: 1rem 0;
-  font-size: 0.85rem;
+  font-size: 0.9rem; /* Slightly larger for mobile readability */
   color: var(--medium-gray);
   font-style: italic;
+  padding: 0 12px;
 `;
 
 const ClearButton = styled.button`
   background: none;
   border: none;
   color: var(--primary);
-  font-size: 0.8rem;
-  padding: 4px 8px;
+  font-size: 0.85rem;
+  padding: 8px 12px; /* Larger touch target */
   cursor: pointer;
-  margin-top: 0.5rem;
+  margin-top: 10px; /* More space for touch */
   text-decoration: underline;
+  display: inline-block;
   
   &:hover {
     color: var(--accent);
@@ -383,6 +413,34 @@ const ChapterSelection: React.FC = () => {
     ? psalmCategories.find(c => c.id === selectedCategory)
     : null;
   
+  // Add a ref for the scroll container
+  const categoryScrollRef = React.useRef<HTMLDivElement>(null);
+  
+  // Add a function to scroll to the selected category
+  const scrollToSelectedCategory = React.useCallback(() => {
+    if (categoryScrollRef.current && selectedCategory) {
+      const container = categoryScrollRef.current;
+      const selectedButton = container.querySelector(`[data-category="${selectedCategory}"]`);
+      
+      if (selectedButton) {
+        // Calculate position to center the button
+        const containerWidth = container.offsetWidth;
+        const buttonLeft = (selectedButton as HTMLElement).offsetLeft;
+        const buttonWidth = (selectedButton as HTMLElement).offsetWidth;
+        
+        container.scrollTo({
+          left: buttonLeft - containerWidth / 2 + buttonWidth / 2,
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [selectedCategory]);
+  
+  // Call the scroll function when category changes
+  React.useEffect(() => {
+    scrollToSelectedCategory();
+  }, [selectedCategory, scrollToSelectedCategory]);
+  
   return (
     <ChapterContainer>
       <TranslationSelector />
@@ -391,19 +449,22 @@ const ChapterSelection: React.FC = () => {
         Select a Psalm chapter to begin your meditation
       </Subtitle>
       
-      {/* Category selection */}
+      {/* Updated category selection */}
       <CategoryContainer>
-        <CategoryList>
-          {psalmCategories.map(category => (
-            <CategoryButton
-              key={category.id}
-              $active={selectedCategory === category.id}
-              onClick={() => handleCategorySelect(category.id)}
-            >
-              {category.name}
-            </CategoryButton>
-          ))}
-        </CategoryList>
+        <CategoryScrollArea ref={categoryScrollRef}>
+          <CategoryList>
+            {psalmCategories.map(category => (
+              <CategoryButton
+                key={category.id}
+                $active={selectedCategory === category.id}
+                onClick={() => handleCategorySelect(category.id)}
+                data-category={category.id}
+              >
+                {category.name}
+              </CategoryButton>
+            ))}
+          </CategoryList>
+        </CategoryScrollArea>
       </CategoryContainer>
       
       {selectedCategoryInfo && (
