@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useMeditation } from '../context/MeditationContext';
 import styled from 'styled-components';
 import TranslationSelector from './TranslationSelector';
@@ -177,9 +177,141 @@ const ResetButton = styled.button`
   }
 `;
 
+// New styled components for categories
+const CategoryContainer = styled.div`
+  width: 100%;
+  max-width: 850px;
+  margin-bottom: 1.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  
+  /* Hide scrollbar but allow scrolling */
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+`;
+
+const CategoryList = styled.div`
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  min-width: min-content;
+`;
+
+const CategoryButton = styled.button<{ $active: boolean }>`
+  background-color: ${props => props.$active ? 'var(--accent)' : 'transparent'};
+  color: ${props => props.$active ? '#000000' : 'var(--primary)'};
+  border: 1px solid var(--accent);
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background-color: var(--accent);
+    color: #000000;
+  }
+  
+  @media (min-width: 768px) {
+    font-size: 0.9rem;
+    padding: 6px 14px;
+  }
+`;
+
+const HighlightedGrid = styled.div`
+  position: relative;
+  width: 100%;
+`;
+
+const CategoryInfo = styled.div`
+  text-align: center;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+  color: var(--medium-gray);
+  font-style: italic;
+`;
+
+const ClearButton = styled.button`
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  text-decoration: underline;
+  
+  &:hover {
+    color: var(--accent);
+  }
+`;
+
+// Define Psalm categories
+interface PsalmCategory {
+  id: string;
+  name: string;
+  description: string;
+  psalms: number[];
+}
+
+const psalmCategories: PsalmCategory[] = [
+  {
+    id: 'praise',
+    name: 'Praise',
+    description: "Celebrating God's character and works",
+    psalms: [8, 19, 33, 100, 103, 145, 146, 147, 148, 149, 150]
+  },
+  {
+    id: 'lament',
+    name: 'Lament',
+    description: 'Expressing sorrow or crying out to God',
+    psalms: [3, 22, 42, 44, 88]
+  },
+  {
+    id: 'penitential',
+    name: 'Penitential',
+    description: 'Confessing sin and seeking forgiveness',
+    psalms: [6, 32, 38, 51, 102, 130, 143]
+  },
+  {
+    id: 'wisdom',
+    name: 'Wisdom',
+    description: 'Teaching about godly living',
+    psalms: [1, 37, 49, 73, 112, 119, 128]
+  },
+  {
+    id: 'messianic',
+    name: 'Messianic',
+    description: 'Focusing on the king or Messiah',
+    psalms: [2, 18, 20, 21, 45, 72, 89, 110, 132]
+  },
+  {
+    id: 'trust',
+    name: 'Trust',
+    description: "Expressing confidence in God's care",
+    psalms: [11, 16, 23, 27, 62, 63, 91, 121]
+  },
+  {
+    id: 'healing',
+    name: 'Healing',
+    description: "Seeking God's restoration and comfort",
+    psalms: [30, 41, 107, 116, 147]
+  },
+  {
+    id: 'guidance',
+    name: 'Guidance',
+    description: "Seeking God's direction in life",
+    psalms: [25, 43, 86, 119]
+  }
+];
+
 const ChapterSelection: React.FC = () => {
   const { loadPsalm, loadRandomPsalm, isLoading } = useMeditation();
   const [readChapters, setReadChapters] = React.useState<number[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   
   const psalmNumbers = Array.from({ length: 150 }, (_, i) => i + 1);
   
@@ -210,6 +342,17 @@ const ChapterSelection: React.FC = () => {
   };
   
   const handleRandomClick = () => {
+    // If a category is selected, pick a random psalm from that category
+    if (selectedCategory) {
+      const category = psalmCategories.find(c => c.id === selectedCategory);
+      if (category && category.psalms.length > 0) {
+        const randomIndex = Math.floor(Math.random() * category.psalms.length);
+        const randomPsalm = category.psalms[randomIndex];
+        loadPsalm(randomPsalm);
+        return;
+      }
+    }
+    // Otherwise, use the default random psalm function
     loadRandomPsalm();
   };
   
@@ -224,6 +367,22 @@ const ChapterSelection: React.FC = () => {
     }
   };
   
+  const handleCategorySelect = (categoryId: string) => {
+    setSelectedCategory(prevCategory => 
+      prevCategory === categoryId ? null : categoryId
+    );
+  };
+  
+  // Filter psalms based on selected category
+  const filteredPsalms = selectedCategory
+    ? psalmCategories.find(c => c.id === selectedCategory)?.psalms || []
+    : psalmNumbers;
+  
+  // Get the selected category information
+  const selectedCategoryInfo = selectedCategory
+    ? psalmCategories.find(c => c.id === selectedCategory)
+    : null;
+  
   return (
     <ChapterContainer>
       <TranslationSelector />
@@ -232,25 +391,64 @@ const ChapterSelection: React.FC = () => {
         Select a Psalm chapter to begin your meditation
       </Subtitle>
       
+      {/* Category selection */}
+      <CategoryContainer>
+        <CategoryList>
+          {psalmCategories.map(category => (
+            <CategoryButton
+              key={category.id}
+              $active={selectedCategory === category.id}
+              onClick={() => handleCategorySelect(category.id)}
+            >
+              {category.name}
+            </CategoryButton>
+          ))}
+        </CategoryList>
+      </CategoryContainer>
+      
+      {selectedCategoryInfo && (
+        <CategoryInfo>
+          {selectedCategoryInfo.description}
+          <br />
+          <ClearButton onClick={() => setSelectedCategory(null)}>
+            Show all Psalms
+          </ClearButton>
+        </CategoryInfo>
+      )}
+      
       {isLoading ? (
         <LoadingSpinner />
       ) : (
         <>
-          <ChapterGrid>
-            {psalmNumbers.map(num => (
-              <ChapterNumber 
-                key={num} 
-                onClick={() => handlePsalmClick(num)}
-                aria-label={`Psalm ${num}`}
-              >
-                {num}
-                {readChapters.includes(num) && <ReadIndicator />}
-              </ChapterNumber>
-            ))}
-          </ChapterGrid>
+          <HighlightedGrid>
+            <ChapterGrid>
+              {psalmNumbers.map(num => {
+                const isInCategory = selectedCategory 
+                  ? filteredPsalms.includes(num)
+                  : true;
+                
+                return (
+                  <ChapterNumber 
+                    key={num} 
+                    onClick={() => handlePsalmClick(num)}
+                    aria-label={`Psalm ${num}`}
+                    style={{ 
+                      opacity: isInCategory ? 1 : 0.3,
+                      pointerEvents: isInCategory ? 'auto' : 'none'
+                    }}
+                  >
+                    {num}
+                    {readChapters.includes(num) && <ReadIndicator />}
+                  </ChapterNumber>
+                );
+              })}
+            </ChapterGrid>
+          </HighlightedGrid>
           
           <RandomButton onClick={handleRandomClick}>
-            Select a random Psalm
+            {selectedCategory 
+              ? `Select a random ${selectedCategoryInfo?.name} Psalm` 
+              : 'Select a random Psalm'}
           </RandomButton>
           
           {readChapters.length > 0 && (
