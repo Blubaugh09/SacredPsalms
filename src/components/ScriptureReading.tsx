@@ -352,6 +352,84 @@ const ScriptureReading: React.FC = () => {
     setPhrases(sortedPhrases);
   }, [highlightedWords]);
   
+  // Add this function to check if words should be connected as a phrase
+  const connectHighlightedWords = () => {
+    if (highlightedWords.length <= 1) return;
+    
+    // Sort highlighted words by index to find sequential words
+    const sortedWords = [...highlightedWords].sort((a, b) => a.index - b.index);
+    
+    // Group IDs to merge (when consecutive words with different group IDs are found)
+    const groupsToMerge: Record<number, number> = {};
+    
+    // Scan for consecutive words that should be merged
+    for (let i = 0; i < sortedWords.length - 1; i++) {
+      const currentWord = sortedWords[i];
+      const nextWord = sortedWords[i + 1];
+      
+      // Check if words are consecutive in the text
+      if (nextWord.index - currentWord.index === 1) {
+        // If both words have groups but different ones, they should be merged
+        if (currentWord.groupId && nextWord.groupId && currentWord.groupId !== nextWord.groupId) {
+          // Map the higher group ID to the lower one (we'll merge into the lower ID)
+          const sourceGroup = Math.max(currentWord.groupId, nextWord.groupId);
+          const targetGroup = Math.min(currentWord.groupId, nextWord.groupId);
+          groupsToMerge[sourceGroup] = targetGroup;
+        }
+        // If one has a group and the other doesn't, add the ungrouped word to the group
+        else if (currentWord.groupId && !nextWord.groupId) {
+          // Update the next word to join current word's group
+          setSession(prev => ({
+            ...prev,
+            highlightedWords: prev.highlightedWords.map(hw => 
+              hw.index === nextWord.index ? { ...hw, groupId: currentWord.groupId } : hw
+            )
+          }));
+        }
+        else if (!currentWord.groupId && nextWord.groupId) {
+          // Update the current word to join next word's group
+          setSession(prev => ({
+            ...prev,
+            highlightedWords: prev.highlightedWords.map(hw => 
+              hw.index === currentWord.index ? { ...hw, groupId: nextWord.groupId } : hw
+            )
+          }));
+        }
+        else if (!currentWord.groupId && !nextWord.groupId) {
+          // Create a new group for these consecutive words
+          const newGroupId = selectionGroupCounter;
+          setSession(prev => ({
+            ...prev,
+            highlightedWords: prev.highlightedWords.map(hw => 
+              (hw.index === currentWord.index || hw.index === nextWord.index) 
+                ? { ...hw, groupId: newGroupId } 
+                : hw
+            )
+          }));
+          setSelectionGroupCounter(prev => prev + 1);
+        }
+      }
+    }
+    
+    // Merge any groups that need to be merged
+    if (Object.keys(groupsToMerge).length > 0) {
+      setSession(prev => ({
+        ...prev,
+        highlightedWords: prev.highlightedWords.map(hw => {
+          if (hw.groupId && groupsToMerge[hw.groupId]) {
+            return { ...hw, groupId: groupsToMerge[hw.groupId] };
+          }
+          return hw;
+        })
+      }));
+    }
+  };
+  
+  // Call this function after new words are highlighted
+  useEffect(() => {
+    connectHighlightedWords();
+  }, [highlightedWords.length]); // Re-run when the number of highlighted words changes
+  
   // Handle selection start
   const handleSelectionStart = (index: number, e: React.TouchEvent | React.MouseEvent) => {
     // Reset scrolling detection
@@ -436,7 +514,7 @@ const ScriptureReading: React.FC = () => {
     setSelectedIndices(newSelectedIndices);
   };
   
-  // Handle selection end
+  // Modify handleSelectionEnd to include index values in the group ID assignment
   const handleSelectionEnd = () => {
     if (!isSelecting || isScrollingRef.current) {
       setIsSelecting(false);
@@ -453,7 +531,18 @@ const ScriptureReading: React.FC = () => {
         if (highlightedWords.some(hw => hw.index === index)) {
           removeHighlight(index);
         } else {
-          highlightWord(wordObj.text, index);
+          // First check if this word is adjacent to any existing highlighted word
+          const adjacentHighlighted = highlightedWords.find(hw => 
+            Math.abs(hw.index - index) === 1
+          );
+          
+          if (adjacentHighlighted && adjacentHighlighted.groupId) {
+            // If adjacent to a grouped word, add to that group
+            highlightWord(wordObj.text, index, adjacentHighlighted.groupId);
+          } else {
+            // Otherwise highlight individually
+            highlightWord(wordObj.text, index);
+          }
         }
       }
     } 
@@ -461,7 +550,10 @@ const ScriptureReading: React.FC = () => {
     else if (selectedIndices.size > 1) {
       const currentGroupId = selectionGroupCounter;
       
-      selectedIndices.forEach(index => {
+      // Sort indices to process in order
+      const orderedIndices = Array.from(selectedIndices).sort((a, b) => a - b);
+      
+      orderedIndices.forEach(index => {
         const wordObj = words.find(w => w.index === index);
         if (wordObj && !highlightedWords.some(hw => hw.index === index)) {
           highlightWord(wordObj.text, index, currentGroupId);
