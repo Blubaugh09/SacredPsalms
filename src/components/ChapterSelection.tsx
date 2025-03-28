@@ -273,19 +273,19 @@ const psalmCategories: PsalmCategory[] = [
   },
   {
     id: 'praise',
-    name: 'Psalms of Praise',
+    name: 'Praise to God',
     description: "Celebrating God's character and works",
     psalms: [8, 19, 33, 100, 103, 145, 146, 147, 148, 149, 150]
   },
   {
     id: 'lament',
-    name: 'Lament Psalms',
+    name: 'Crying Out to God',
     description: 'Expressing sorrow or crying out to God',
     psalms: [3, 22, 42, 44, 88]
   },
   {
     id: 'penitential',
-    name: 'Penitential Psalms',
+    name: 'Confess and Seek Forgiveness',
     description: 'Confessing sin and seeking forgiveness',
     psalms: [6, 32, 38, 51, 102, 130, 143]
   },
